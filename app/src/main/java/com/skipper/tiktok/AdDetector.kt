@@ -37,9 +37,15 @@ object AdDetector {
 
         // 3. Другие популярные сайты с кейсами и рулетками
         w("casedrop|ggdrop|csfail|mycsgo|forcedrop|skinbox|hotcase|easydrop|magicdrop|tastybreak|hellcase|csgo500|skinhouse|скинхаус|battledrop|upx|up\\-x"),
+        w("topskin|top\\s*skin|топскин|топ\\s*скин|top-skin|top_skin"),
+        w("casebattle|кейсбатл|case\\-battle|cscase|csgetto|skinon|skinrush"),
         "skin\\s*house|скин\\s*хаус|cknhxayc|ckuhxayc",
 
-        // 3.1 Паттерны рулеток оружия (CS2 скины/ножи в баннерах)
+        // 3.1 Кнопки действий рулеток («ВЫВЕСТИ», «ОТКРЫТЬ КЕЙС»)
+        w("вывести|вывод|выведи|b[b1l]ibect[il]?|bybect[il]?|bibect[il]?|vyvesti|vyvod"),
+        "открыть\\s*кейс|открой\\s*кейс|открывай|otkroy\\s*keys",
+
+        // 3.2 Паттерны рулеток оружия (CS2 скины/ножи в баннерах)
         "neo[\\-_ ]*noir|teclu\\s*burner|doppler|karambit|case\\s*hardened|dragon\\s*lore|допплер|керамбит",
 
         // 4. Промокоды, депозиты, халява (Русский + Латиница)

@@ -239,9 +239,9 @@ class SkipperAccessibilityService : AccessibilityService() {
         val barRight = screenWidth * 0.967f
         val barWidth = barRight - barLeft
 
-        // Если бегунок уже правее 65% длины видео (реклама в аутро/хвосте короткого ролика):
+        // Если бегунок уже во второй половине видео (>55% длины, реклама в аутро):
         // Перемотка упрется в финал. Вместо этого мгновенно переходим к следующему ролику!
-        val isNearEnd = detectedThumbX != null && detectedThumbX > (barLeft + barWidth * 0.65f)
+        val isNearEnd = detectedThumbX != null && detectedThumbX > (barLeft + barWidth * 0.55f)
 
         if (isNearEnd) {
             if (SkipperConfig.showToast) {
