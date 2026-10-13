@@ -64,13 +64,6 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Статистика сброшена", Toast.LENGTH_SHORT).show()
         }
 
-        findViewById<Button>(R.id.btnDonate).setOnClickListener {
-            val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            val clip = android.content.ClipData.newPlainText("TON Wallet", "UQAjHHEZOrKhrbt3aeQT9Xm3kHt2Xeo3Pnz3ok6HhR8OYzn-")
-            clipboard.setPrimaryClip(clip)
-            Toast.makeText(this, "💎 Адрес TON кошелька скопирован!", Toast.LENGTH_SHORT).show()
-        }
-
         btnEnableAccessibility.setOnClickListener {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
