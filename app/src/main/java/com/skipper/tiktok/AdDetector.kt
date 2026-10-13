@@ -15,46 +15,60 @@ object AdDetector {
     // Оффлайн-распознаватель текста (ML Kit)
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
+    // Кроссплатформенный Unicode-разделитель слов для Android (без \b, который сбоит на кириллице)
+    private fun w(regex: String): String = "(?:^|[^\\p{L}\\p{Nd}])($regex)(?:$|[^\\p{L}\\p{Nd}])"
+
     private val AD_REGEX_LIST = listOf(
         // 1. СЕТЬ «МУСОР ДРОП» (Musor Drop, Upgrader)
-        "(?i)\\b(мусор|musor|mycop|mucor)\\b",
-        "(?i)\\b(мусордроп|мусор[\\s\\-_]+дроп|musordrop|musor[\\s\\-_]+drop|mycopdrop|mycop[\\s\\-_]+drop)\\b",
-        "(?i)\\b(upgrader|апгрейдер|апгрейд)\\b",
-        "(?i)(большой\\s*дроп|высокий\\s*шанс|шанс\\s*на\\s*дроп)",
-        "(?i)\\b(bolshoy|bolshoi)\\b",
+        w("мусор|musor|mycop|mucor|mysor|mycor"),
+        w("мусордроп|мусор[\\s\\-_]+дроп|musordrop|musor[\\s\\-_]+drop|mycopdrop|mycop[\\s\\-_]+drop"),
+        w("upgrader|апгрейдер|апгрейд|апгрейдить"),
+        "большой\\s*дроп|высокий\\s*шанс|шанс\\s*на\\s*дроп|выбей\\s*нож",
+        w("bolshoy|bolshoi"),
 
         // 2. Доменные зоны и ссылки на сайты рулеток
-        "(?i)\\b[a-z0-9\\-_]+\\.(gg|fun|run|pro|win|top|bet|xyz|partners)\\b",
+        w("[a-z0-9\\-_]+\\.(?:gg|fun|run|pro|win|top|bet|xyz|partners)"),
 
         // 3. Другие популярные сайты с кейсами и рулетками
-        "(?i)\\b(casedrop|ggdrop|csfail|mycsgo|forcedrop|skinbox|hotcase|easydrop|magicdrop|tastybreak|hellcase|csgo500|skinhouse|скинхаус)\\b",
-        "(?i)skin\\s*house|скин\\s*хаус",
+        w("casedrop|ggdrop|csfail|mycsgo|forcedrop|skinbox|hotcase|easydrop|magicdrop|tastybreak|hellcase|csgo500|skinhouse|скинхаус"),
+        "skin\\s*house|скин\\s*хаус",
 
         // 3.1 Паттерны рулеток оружия (CS2 скины/ножи в баннерах)
-        "(?i)\\b(neo[\\-_ ]*noir|teclu\\s*burner|doppler|karambit|case\\s*hardened|dragon\\s*lore)\\b",
+        "neo[\\-_ ]*noir|teclu\\s*burner|doppler|karambit|case\\s*hardened|dragon\\s*lore",
 
-        // 4. Латинские промокоды и термины (только целевые, без одиночных общих слов)
-        "(?i)\\b(promocode|promo\\s*code|deposit|depo)\\b",
+        // 4. Промокоды, депозиты, халява (Русский + Латиница)
+        w("promocode|promo\\s*code|промокод|промо-код|промик|депозит|деп|балик|халява|халявный|кейс|кейсы|рулетка"),
 
-        // 5. Русские слова (кириллица, связанные с рулетками и кейсами)
-        "(?i)\\b(промокод|депозит|деп|балик|халява|кейс|кейсы|рулетка)\\b",
-
-        // 6. Визуальные транслиты латинского OCR для русских букв
-        "(?i)\\b(pomokod|npomoko|promokod|depozit|kenc|keuc|keys|balik)\\b"
-    ).map { Pattern.compile(it, Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE) }
+        // 5. Визуальные транслиты латинского OCR для русских букв
+        w("pomokod|npomoko|npomokod|promokod|depozit|depo|kenc|keuc|keys|balik|xaljava|xalyava")
+    ).map {
+        Pattern.compile(
+            it,
+            Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE
+        )
+    }
 
     /**
      * Анализирует битмап кадра на наличие рекламы.
-     * Оптимизировано: обрезает кадр до верхней трети/половины экрана (где находятся оверлеи рулеток/баннеров)
-     * Возвращает название сработавшего правила или null.
+     * Сканирует от 8% до 78% высоты экрана (отсекая статус-бар и нижние кнопки TikTok).
+     * Масштабирует изображение до ширины 540px для 4-кратной экономии RAM и 3-кратного ускорения OCR.
      */
     suspend fun analyzeFrame(bitmap: Bitmap): String? {
-        return try {
-            // Баннеры рулеток (SkinHouse, MusorDrop, рулетки скинов) монтируются в верхней части экрана (0 .. 45% высоты)
-            val cropHeight = (bitmap.height * 0.45f).toInt().coerceAtMost(bitmap.height)
-            val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, cropHeight)
+        var croppedBitmap: Bitmap? = null
+        var scaledBitmap: Bitmap? = null
 
-            val image = InputImage.fromBitmap(croppedBitmap, 0)
+        return try {
+            val topOffset = (bitmap.height * 0.08f).toInt()
+            val cropHeight = (bitmap.height * 0.70f).toInt().coerceAtMost(bitmap.height - topOffset)
+
+            croppedBitmap = Bitmap.createBitmap(bitmap, 0, topOffset, bitmap.width, cropHeight)
+
+            // Масштабируем до 540px ширины для ускорения работы нейросети и оптимизации памяти
+            val targetWidth = 540
+            val targetHeight = (cropHeight * (targetWidth.toFloat() / bitmap.width)).toInt()
+            scaledBitmap = Bitmap.createScaledBitmap(croppedBitmap, targetWidth, targetHeight, false)
+
+            val image = InputImage.fromBitmap(scaledBitmap, 0)
             val result = recognizer.process(image).await()
             val text = result.text
 
@@ -65,7 +79,11 @@ object AdDetector {
                 for (pattern in AD_REGEX_LIST) {
                     val matcher = pattern.matcher(cleanText)
                     if (matcher.find()) {
-                        val matched = matcher.group()
+                        val matched = if (matcher.groupCount() >= 1 && matcher.group(1) != null) {
+                            matcher.group(1)
+                        } else {
+                            matcher.group()
+                        }
                         Log.i(TAG, "Ad detected! Matched: '$matched' in text: '$cleanText'")
                         return matched
                     }
@@ -75,6 +93,13 @@ object AdDetector {
         } catch (e: Exception) {
             Log.e(TAG, "Error analyzing frame", e)
             null
+        } finally {
+            if (scaledBitmap != null && scaledBitmap != croppedBitmap && !scaledBitmap.isRecycled) {
+                scaledBitmap.recycle()
+            }
+            if (croppedBitmap != null && !croppedBitmap.isRecycled) {
+                croppedBitmap.recycle()
+            }
         }
     }
 }

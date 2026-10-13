@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Разрешения для работы сервисов в фоне и поверх окон -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
     <!-- Запросы на видимость пакетов TikTok на устройстве (Android 11+) -->
     <queries>
         <package android:name="com.zhiliaoapp.musically" />
@@ -28,6 +22,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TikTokAdSkipper">
 
+        <!-- Полное отключение аналитики и телеметрии Google ML Kit (Privacy First) -->
+        <meta-data
+            android:name="firebase_ml_usage_reporting_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.google.firebase.ml.vision.DISABLE_USAGE_REPORT"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -37,14 +39,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Сервис детекции кадров через захват экрана -->
-        <service
-            android:name=".AdDetectorService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
-
-        <!-- Служба специальных возможностей для симуляции жестов перемотки -->
+        <!-- Служба специальных возможностей для распознавания кадров и симуляции перемотки -->
         <service
             android:name=".SkipperAccessibilityService"
             android:enabled="true"

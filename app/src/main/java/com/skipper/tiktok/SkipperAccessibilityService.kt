@@ -2,17 +2,18 @@ package com.skipper.tiktok
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +22,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
-import java.util.regex.Pattern
 
 class SkipperAccessibilityService : AccessibilityService() {
 
@@ -45,6 +45,8 @@ class SkipperAccessibilityService : AccessibilityService() {
         // Статистика сессии
         var skippedAdsCount: Int = 0
             private set
+
+        private const val SKIP_COOLDOWN_MS = 2500L
     }
 
     var isMonitoringActive: Boolean = true
@@ -55,10 +57,12 @@ class SkipperAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
     private var screenshotJob: Job? = null
     private val screenshotExecutor = Executors.newSingleThreadExecutor()
+    private var powerManager: PowerManager? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
         isTikTokInForeground = true
         Log.d(TAG, "SkipperAccessibilityService connected")
         startVisualMonitoring()
@@ -67,6 +71,7 @@ class SkipperAccessibilityService : AccessibilityService() {
     /**
      * Фоновый цикл визуального сканирования через takeScreenshot() (Android 11+).
      * Проверяет видеокадр каждые 500мс для упреждающего детектирования баннеров.
+     * Автоматически приостанавливается, если экран выключен (экономия батареи).
      */
     private fun startVisualMonitoring() {
         screenshotJob?.cancel()
@@ -80,12 +85,18 @@ class SkipperAccessibilityService : AccessibilityService() {
                 try {
                     delay(500)
 
+                    // Экономия аккумулятора: если экран выключен, ждем
+                    if (powerManager?.isInteractive == false) {
+                        delay(1000)
+                        continue
+                    }
+
                     if (!isMonitoringActive || !isTikTokInForeground) {
                         continue
                     }
 
                     val now = System.currentTimeMillis()
-                    if (now - lastSkipTimestamp < 4000) {
+                    if (now - lastSkipTimestamp < SKIP_COOLDOWN_MS) {
                         continue
                     }
 
@@ -102,8 +113,9 @@ class SkipperAccessibilityService : AccessibilityService() {
 
         takeScreenshot(Display.DEFAULT_DISPLAY, screenshotExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(screenshot: ScreenshotResult) {
+                var bitmap: Bitmap? = null
                 try {
-                    val bitmap = Bitmap.wrapHardwareBuffer(
+                    bitmap = Bitmap.wrapHardwareBuffer(
                         screenshot.hardwareBuffer,
                         screenshot.colorSpace
                     )?.copy(Bitmap.Config.ARGB_8888, false)
@@ -111,28 +123,35 @@ class SkipperAccessibilityService : AccessibilityService() {
 
                     if (bitmap != null) {
                         serviceScope.launch {
-                            val matchedAd = AdDetector.analyzeFrame(bitmap)
+                            val frameBitmap = bitmap
+                            try {
+                                val matchedAd = AdDetector.analyzeFrame(frameBitmap)
 
-                            if (matchedAd != null) {
-                                val now = System.currentTimeMillis()
-                                if (now - lastSkipTimestamp >= 4000) {
-                                    lastSkipTimestamp = now
-                                    skippedAdsCount++
+                                if (matchedAd != null) {
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastSkipTimestamp >= SKIP_COOLDOWN_MS) {
+                                        lastSkipTimestamp = now
+                                        skippedAdsCount++
 
-                                    // Определяем точное текущее положение ползунка на экране по пикселям
-                                    val currentThumbX = detectThumbXFromBitmap(bitmap)
-                                    bitmap.recycle()
+                                        // Определяем точное текущее положение ползунка на экране по пикселям
+                                        val currentThumbX = detectThumbXFromBitmap(frameBitmap)
 
-                                    Log.i(TAG, "Visual ad detected: '$matchedAd' (Thumb at X=$currentThumbX) -> Fast forwarding timeline!")
-                                    notifyAndFastForward(matchedAd, currentThumbX)
-                                    return@launch
+                                        Log.i(TAG, "Visual ad detected: '$matchedAd' (Thumb at X=$currentThumbX) -> Fast forwarding timeline!")
+                                        notifyAndFastForward(matchedAd, currentThumbX)
+                                    }
+                                }
+                            } finally {
+                                if (!frameBitmap.isRecycled) {
+                                    frameBitmap.recycle()
                                 }
                             }
-                            bitmap.recycle()
                         }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error processing screenshot", e)
+                    if (bitmap != null && !bitmap.isRecycled) {
+                        bitmap.recycle()
+                    }
                 }
             }
 
@@ -171,25 +190,31 @@ class SkipperAccessibilityService : AccessibilityService() {
 
     /**
      * Сканирует строку пикселей таймлайна (Y ≈ 91.67% экрана), находя самую правую белую точку (ползунок).
-     * Это дает 100% точную реальную позицию воспроизведения без обращения к ненадёжным API.
+     * Проверяет несколько соседних Y-строк для абсолютной точности на любых разрешениях экрана.
      */
     private fun detectThumbXFromBitmap(bitmap: Bitmap): Float? {
         return try {
-            val y = (bitmap.height * 0.9167f).toInt().coerceIn(0, bitmap.height - 1)
+            val baseY = (bitmap.height * 0.9167f).toInt().coerceIn(0, bitmap.height - 1)
             var maxWhiteX = -1
 
-            // Сканируем границы SeekBar (от 36px до width - 36px)
             val minX = (bitmap.width * 0.033f).toInt()
             val maxX = (bitmap.width * 0.967f).toInt().coerceAtMost(bitmap.width - 1)
 
-            for (x in minX..maxX step 3) {
-                val pixel = bitmap.getPixel(x, y)
-                val r = (pixel shr 16) and 0xff
-                val g = (pixel shr 8) and 0xff
-                val b = pixel and 0xff
-                // Белая точка прогресса / ползунка
-                if (r > 165 && g > 165 && b > 165) {
-                    maxWhiteX = x
+            // Проверяем 3 соседних строки вокруг линии таймлайна
+            val testYs = listOf(baseY - 2, baseY, baseY + 2).filter { it in 0 until bitmap.height }
+
+            for (y in testYs) {
+                for (x in minX..maxX step 3) {
+                    val pixel = bitmap.getPixel(x, y)
+                    val r = (pixel shr 16) and 0xff
+                    val g = (pixel shr 8) and 0xff
+                    val b = pixel and 0xff
+                    // Белая точка прогресса / ползунка (R, G, B > 165)
+                    if (r > 165 && g > 165 && b > 165) {
+                        if (x > maxWhiteX) {
+                            maxWhiteX = x
+                        }
+                    }
                 }
             }
 
@@ -203,7 +228,7 @@ class SkipperAccessibilityService : AccessibilityService() {
     /**
      * Выполняет точную перемотку ролика вперед по таймлайну TikTok:
      * Берет ТОЧНОЕ место, где сейчас находится белая точка ползунка,
-     * и плавно перетаскивает ее вперед на +18-20% длины видео.
+     * и плавно перетаскивает ее вперед на +15% длины видео (~4-5 секунд).
      */
     fun performTimelineFastForward(detectedThumbX: Float? = null) {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -223,8 +248,8 @@ class SkipperAccessibilityService : AccessibilityService() {
         val currentX = detectedThumbX ?: (barLeft + barWidth * 0.25f)
         val startX = currentX.coerceIn(barLeft + 10f, barRight - 40f)
 
-        // Перетаскиваем ровно на +20% длины таймлайна вперед (эквивалент ~4-6 секунд видео)
-        val seekForwardAmount = barWidth * 0.20f
+        // Перетаскиваем на +15% длины таймлайна вперед (аккуратные ~4-5 секунд видео, без перескока контента)
+        val seekForwardAmount = barWidth * 0.15f
         val endX = (startX + seekForwardAmount).coerceAtMost(barRight - 15f)
 
         Log.i(TAG, "Executing precise timeline drag from X=$startX to X=$endX at Y=$timelineY")
