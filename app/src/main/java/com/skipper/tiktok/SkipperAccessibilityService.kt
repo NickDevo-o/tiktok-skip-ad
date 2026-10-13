@@ -46,7 +46,7 @@ class SkipperAccessibilityService : AccessibilityService() {
     }
 
     var isMonitoringActive: Boolean = true
-    var isTikTokInForeground: Boolean = true
+    var isTikTokInForeground: Boolean = false
         private set
 
     private var lastSkipTimestamp = 0L
@@ -60,8 +60,8 @@ class SkipperAccessibilityService : AccessibilityService() {
         instance = this
         SkipperConfig.init(applicationContext)
         powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
-        isTikTokInForeground = true
-        Log.d(TAG, "SkipperAccessibilityService connected")
+        isTikTokInForeground = false
+        Log.d(TAG, "SkipperAccessibilityService connected (idle until TikTok is opened)")
         startVisualMonitoring()
     }
 
@@ -86,8 +86,31 @@ class SkipperAccessibilityService : AccessibilityService() {
                         continue
                     }
 
+                    // Жесткая проверка активного приложения: если открыт не TikTok — спим
+                    val activePkg = try {
+                        rootInActiveWindow?.packageName?.toString()
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    if (activePkg != null) {
+                        if (activePkg.contains("com.skipper.tiktok") ||
+                            activePkg.contains("launcher") ||
+                            activePkg.contains("systemui") ||
+                            activePkg.contains("settings")
+                        ) {
+                            isTikTokInForeground = false
+                        } else {
+                            isTikTokInForeground = TIKTOK_PACKAGES.contains(activePkg) ||
+                                    activePkg.contains("musically") ||
+                                    activePkg.contains("aweme") ||
+                                    activePkg.contains("trill") ||
+                                    (activePkg.contains("tiktok") && !activePkg.contains("skipper"))
+                        }
+                    }
+
                     if (!isMonitoringActive || !isTikTokInForeground) {
-                        delay(500)
+                        delay(600)
                         continue
                     }
 
@@ -183,13 +206,21 @@ class SkipperAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val pkg = event?.packageName?.toString() ?: return
 
-        if (!pkg.contains("com.skipper.tiktok") && !pkg.contains("android")) {
-            isTikTokInForeground = TIKTOK_PACKAGES.contains(pkg) ||
-                    pkg.contains("musically") ||
-                    pkg.contains("aweme") ||
-                    pkg.contains("trill") ||
-                    pkg.contains("tiktok")
+        if (pkg.contains("com.skipper.tiktok") ||
+            pkg.contains("launcher") ||
+            pkg.contains("systemui") ||
+            pkg.contains("settings") ||
+            pkg.contains("android")
+        ) {
+            isTikTokInForeground = false
+            return
         }
+
+        isTikTokInForeground = TIKTOK_PACKAGES.contains(pkg) ||
+                pkg.contains("musically") ||
+                pkg.contains("aweme") ||
+                pkg.contains("trill") ||
+                (pkg.contains("tiktok") && !pkg.contains("skipper"))
 
         // Если пользователь перелистнул ролик (скролл ленты) — мгновенно сбрасываем таймштамп
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {

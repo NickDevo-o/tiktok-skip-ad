@@ -150,8 +150,8 @@ object AdDetector {
                 val g = (pixel shr 8) and 0xff
                 val b = pixel and 0xff
 
-                // Фирменный оттенок контейнера/сетки: высокий насыщенный зеленый, преобладающий над красным и синим
-                if (g > 130 && g > (r * 1.15f) && g > (b * 1.45f) && (r + b > 45)) {
+                // Фирменный оттенок контейнера/сетки: насыщенный зеленый, преобладающий над красным и синим (синий b строго < 100, исключая циан/бирюзовые кнопки)
+                if (g > 130 && g > (r * 1.15f) && g > (b * 1.45f) && b < 100 && (r + b > 45)) {
                     greenMatchCount++
                 }
             }
@@ -159,6 +159,6 @@ object AdDetector {
 
         if (totalSampled == 0) return false
         val percentage = (greenMatchCount.toFloat() / totalSampled) * 100f
-        return percentage >= 3.5f
+        return percentage >= 5.0f
     }
 }
