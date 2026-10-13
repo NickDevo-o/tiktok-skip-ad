@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">TikTok Ad Skipper</string>
+    <string name="accessibility_description">Служба автоматической перемотки навязчивых рекламных баннеров (кейсов/казино) в TikTok.</string>
+    <string name="service_status_running">Служба активна: мониторинг запущен</string>
+    <string name="service_status_stopped">Служба остановлена</string>
+    <string name="btn_start">Запустить авто-скиппер</string>
+    <string name="btn_stop">Остановить</string>
+    <string name="accessibility_permission_needed">Требуется включить службу в Спец. возможностях</string>
+    <string name="overlay_permission_needed">Требуется разрешение на показ поверх других окон</string>
+</resources>

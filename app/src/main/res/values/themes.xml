@@ -1,0 +1,12 @@
+<resources>
+    <style name="Theme.TikTokAdSkipper" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#FE2C55</item>
+        <item name="colorPrimaryVariant">#E02447</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#25F4EE</item>
+        <item name="colorSecondaryVariant">#1FD2CC</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="android:statusBarColor">#121212</item>
+        <item name="android:windowBackground">#121212</item>
+    </style>
+</resources>
