@@ -16,6 +16,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvAccessibilityStatus: TextView
     private lateinit var btnEnableAccessibility: Button
     private lateinit var btnLaunchAndMonitor: Button
+    private lateinit var tvSkippedCount: TextView
+    private lateinit var tvSavedTime: TextView
 
     private var detectedTikTokPackage: String? = null
 
@@ -27,6 +29,8 @@ class MainActivity : AppCompatActivity() {
         tvAccessibilityStatus = findViewById(R.id.tvAccessibilityStatus)
         btnEnableAccessibility = findViewById(R.id.btnEnableAccessibility)
         btnLaunchAndMonitor = findViewById(R.id.btnToggleService)
+        tvSkippedCount = findViewById(R.id.tvSkippedCount)
+        tvSavedTime = findViewById(R.id.tvSavedTime)
 
         // Кнопку "Открыть TikTok" делаем дублем или скрываем за ненадобностью
         findViewById<Button>(R.id.btnOpenTikTok).setOnClickListener {
@@ -137,6 +141,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUI() {
         val tvServiceStatus = findViewById<TextView>(R.id.tvServiceStatus)
+        val skippedCount = SkipperAccessibilityService.skippedAdsCount
+        tvSkippedCount.text = skippedCount.toString()
+
+        val totalSeconds = skippedCount * 5
+        tvSavedTime.text = if (totalSeconds >= 60) {
+            val mins = totalSeconds / 60
+            val secs = totalSeconds % 60
+            "${mins}м ${secs}с"
+        } else {
+            "${totalSeconds} сек"
+        }
+
         if (SkipperAccessibilityService.isRunning) {
             tvAccessibilityStatus.text = "1. Служба спец. возможностей: ПОДКЛЮЧЕНА"
             tvAccessibilityStatus.setTextColor(Color.parseColor("#4CAF50"))

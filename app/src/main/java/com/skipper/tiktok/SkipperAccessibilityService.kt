@@ -41,6 +41,10 @@ class SkipperAccessibilityService : AccessibilityService() {
             "com.ss.android.ugc.aweme.lite",
             "com.tiktok.mod"
         )
+
+        // Статистика сессии
+        var skippedAdsCount: Int = 0
+            private set
     }
 
     var isMonitoringActive: Boolean = true
@@ -62,8 +66,7 @@ class SkipperAccessibilityService : AccessibilityService() {
 
     /**
      * Фоновый цикл визуального сканирования через takeScreenshot() (Android 11+).
-     * Проверяет видеокадр каждые 500мс для упреждающего детектирования баннеров до того, как они пройдут.
-     * Не требует разрешений MediaProjection и не показывает никаких диалогов пользователю.
+     * Проверяет видеокадр каждые 500мс для упреждающего детектирования баннеров.
      */
     private fun startVisualMonitoring() {
         screenshotJob?.cancel()
@@ -75,14 +78,14 @@ class SkipperAccessibilityService : AccessibilityService() {
         screenshotJob = serviceScope.launch {
             while (isActive) {
                 try {
-                    delay(500) // Быстрый упреждающий опрос кадров (2 раза в секунду)
+                    delay(500)
 
                     if (!isMonitoringActive || !isTikTokInForeground) {
                         continue
                     }
 
                     val now = System.currentTimeMillis()
-                    if (now - lastSkipTimestamp < 5000) {
+                    if (now - lastSkipTimestamp < 4000) {
                         continue
                     }
 
@@ -113,9 +116,10 @@ class SkipperAccessibilityService : AccessibilityService() {
 
                             if (matchedAd != null) {
                                 val now = System.currentTimeMillis()
-                                if (now - lastSkipTimestamp >= 5000) {
+                                if (now - lastSkipTimestamp >= 4000) {
                                     lastSkipTimestamp = now
-                                    Log.i(TAG, "Visual ad detected: '$matchedAd' -> Fast forwarding video timeline!")
+                                    skippedAdsCount++
+                                    Log.i(TAG, "Visual ad detected: '$matchedAd' (Total skipped: $skippedAdsCount) -> Fast forwarding timeline!")
                                     notifyAndFastForward(matchedAd)
                                 }
                             }
@@ -142,19 +146,27 @@ class SkipperAccessibilityService : AccessibilityService() {
                     pkg.contains("trill") ||
                     pkg.contains("tiktok")
         }
+
+        // Если пользователь перелистнул ролик (скролл ленты) — мгновенно сбрасываем кулдаун!
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+            if (lastSkipTimestamp != 0L) {
+                lastSkipTimestamp = 0L
+                Log.d(TAG, "User scrolled to next video: cooldown reset to 0ms immediately.")
+            }
+        }
     }
 
     private fun notifyAndFastForward(adLabel: String) {
         Handler(Looper.getMainLooper()).post {
-            Toast.makeText(applicationContext, "⏩ Перемотка рекламы ($adLabel)...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(applicationContext, "⏩ Перемотка рекламы ($adLabel)... [#$skippedAdsCount]", Toast.LENGTH_SHORT).show()
         }
         performTimelineFastForward()
     }
 
     /**
      * Выполняет точную перемотку ролика вперед по таймлайну TikTok:
-     * Координаты SeekBar на 1080x2340: bounds [36, 2103][1044, 2187], центр Y = 2145px
-     * Перетаскивает ползунок вперед вправо, пропуская рекламную вставку (~4-5 секунд).
+     * Динамически определяет текущую позицию ползунка (SeekBar) и протягивает его
+     * вперед ровно от текущей точки на безопасное расстояние (+30-35% длины видео).
      */
     fun performTimelineFastForward() {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -165,29 +177,43 @@ class SkipperAccessibilityService : AccessibilityService() {
         val screenWidth = metrics.widthPixels.toFloat()
         val screenHeight = metrics.heightPixels.toFloat()
 
-        // Точная Y-координата SeekBar: ~91.6% высоты экрана (2145px на 2340px)
-        val timelineY = screenHeight * 0.9167f
-
-        // Ищем SeekBar в дереве окон для абсолютно точных границ, если доступно
+        // Стандартная Y-координата SeekBar на экране: ~91.67% высоты (2145px на 2340px)
+        var timelineY = screenHeight * 0.9167f
         var startX = screenWidth * 0.25f
-        var endX = screenWidth * 0.70f
+        var endX = screenWidth * 0.65f
 
         val rootNode = rootInActiveWindow
         if (rootNode != null) {
             try {
+                // Ищем элемент прогресс-бара по ID из мода и официального клиента
                 val seekBars = rootNode.findAccessibilityNodeInfosByViewId("com.zhiliaoapp.musically:id/uxs")
                 if (!seekBars.isNullOrEmpty()) {
+                    val bar = seekBars[0]
                     val rect = android.graphics.Rect()
-                    seekBars[0].getBoundsInScreen(rect)
-                    val currentTimelineY = rect.centerY().toFloat()
+                    bar.getBoundsInScreen(rect)
+
+                    timelineY = rect.centerY().toFloat()
                     val barWidth = rect.width().toFloat()
-                    startX = rect.left + barWidth * 0.20f
-                    endX = (startX + barWidth * 0.45f).coerceAtMost(rect.right.toFloat() - 20f)
-                    dispatchSwipe(startX, endX, currentTimelineY)
+
+                    // Читаем текущий прогресс через RangeInfo, если доступен
+                    val rangeInfo = bar.rangeInfo
+                    if (rangeInfo != null && rangeInfo.max > 0) {
+                        val currentFraction = (rangeInfo.current / rangeInfo.max).coerceIn(0f, 0.9f)
+                        startX = rect.left + barWidth * currentFraction
+                        // Перематываем на +30% вперед от текущего места, не выходя за пределы бара
+                        endX = (startX + barWidth * 0.32f).coerceAtMost(rect.right.toFloat() - 15f)
+                    } else {
+                        // Если RangeInfo пуст — берем динамический сдвиг от первой трети вперед
+                        startX = rect.left + barWidth * 0.25f
+                        endX = (rect.left + barWidth * 0.65f).coerceAtMost(rect.right.toFloat() - 15f)
+                    }
+
+                    bar.recycle()
+                    dispatchSwipe(startX, endX, timelineY)
                     return
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Could not find seek bar view node, falling back to screen metrics", e)
+                Log.w(TAG, "Error calculating dynamic seekbar position", e)
             } finally {
                 rootNode.recycle()
             }
