@@ -42,7 +42,8 @@ class SkipperAccessibilityService : AccessibilityService() {
             "com.tiktok.mod"
         )
 
-        private const val SKIP_COOLDOWN_MS = 2500L
+        // Быстрый повторный опрос (1.2 сек) позволяет повторно домотать, если интеграция длинная
+        private const val SKIP_COOLDOWN_MS = 1200L
     }
 
     var isMonitoringActive: Boolean = true
@@ -67,7 +68,7 @@ class SkipperAccessibilityService : AccessibilityService() {
 
     /**
      * Фоновый цикл визуального сканирования через takeScreenshot() (Android 11+).
-     * Проверяет видеокадр каждые 500мс для упреждающего детектирования баннеров.
+     * Проверяет видеокадр каждые 250мс для упреждающего детектирования баннеров на самых первых секундах.
      * Автоматически приостанавливается, если экран выключен (экономия батареи).
      */
     private fun startVisualMonitoring() {
@@ -80,7 +81,7 @@ class SkipperAccessibilityService : AccessibilityService() {
         screenshotJob = serviceScope.launch {
             while (isActive) {
                 try {
-                    delay(500)
+                    delay(250) // Быстрая реакция: сканируем 4 раза в секунду
 
                     // Экономия аккумулятора: если экран выключен, ждем
                     if (powerManager?.isInteractive == false) {
@@ -133,7 +134,7 @@ class SkipperAccessibilityService : AccessibilityService() {
                                         // Определяем точное текущее положение ползунка на экране по пикселям
                                         val currentThumbX = detectThumbXFromBitmap(frameBitmap)
 
-                                        Log.i(TAG, "Visual ad detected: '$matchedAd' (Total: #$totalCount, Thumb at X=$currentThumbX)")
+                                        Log.i(TAG, "Visual ad detected: '$matchedAd' (Total: #$totalCount, Thumb at X=$currentThumbX) -> Fast forwarding timeline!")
                                         notifyAndFastForward(matchedAd, currentThumbX, totalCount)
                                     }
                                 }
@@ -224,7 +225,7 @@ class SkipperAccessibilityService : AccessibilityService() {
 
     /**
      * Выполняет точную перемотку ролика вперед по таймлайну TikTok:
-     * Перетаскивает ползунок вперед на настраиваемый процент (по умолчанию 15%, ~4-5 сек).
+     * Перетаскивает ползунок вперед на настраиваемый процент (по умолчанию 22%, ~7-8 сек).
      */
     fun performTimelineFastForward(detectedThumbX: Float? = null, customSeekPercent: Float? = null) {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -257,7 +258,8 @@ class SkipperAccessibilityService : AccessibilityService() {
             lineTo(endX, y)
         }
 
-        val stroke = GestureDescription.StrokeDescription(path, 0, 350)
+        // Длительность 280мс обеспечивает моментальный и четкий отклик SeekBar
+        val stroke = GestureDescription.StrokeDescription(path, 0, 280)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
         dispatchGesture(gesture, object : GestureResultCallback() {

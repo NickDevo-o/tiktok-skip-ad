@@ -42,8 +42,9 @@ object SkipperConfig {
             getSafePrefs()?.edit()?.putBoolean(KEY_SHOW_TOAST, value)?.apply()
         }
 
+    // По умолчанию 22% (эквивалент ~7-8 секунд видео), гарантирующий полный пропуск рекламной вставки
     var seekPercent: Float
-        get() = getSafePrefs()?.getFloat(KEY_SEEK_PERCENT, 0.15f) ?: 0.15f
+        get() = getSafePrefs()?.getFloat(KEY_SEEK_PERCENT, 0.22f) ?: 0.22f
         set(value) {
             getSafePrefs()?.edit()?.putFloat(KEY_SEEK_PERCENT, value)?.apply()
         }
