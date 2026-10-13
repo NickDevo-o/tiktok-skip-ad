@@ -340,10 +340,20 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDonate"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="💎 Поддержать автора (TON)"
+            android:textColor="#25F4EE"
+            android:textSize="12sp" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="8dp"
             android:layout_marginBottom="24dp"
             android:lineSpacingExtra="3dp"
             android:text="100% Приватно и Офлайн:\n• Сканирование работает локально на нейросети ML Kit.\n• Скриншоты и данные никогда не покидают телефон."
