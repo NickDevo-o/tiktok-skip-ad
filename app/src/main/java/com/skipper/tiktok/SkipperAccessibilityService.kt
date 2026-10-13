@@ -111,15 +111,26 @@ class SkipperAccessibilityService : AccessibilityService() {
 
                     if (matchedAd != null) {
                         val now = System.currentTimeMillis()
+                        val wasRecentlySkipped = (now - lastSkipTimestamp) < 1600L
                         lastSkipTimestamp = now
                         val totalCount = SkipperConfig.incrementSkippedCount()
 
-                        Log.i(TAG, "Ad detected: '$matchedAd' (Thumb at X=$currentThumbX) -> Fast forwarding timeline!")
-                        notifyAndFastForward(matchedAd, currentThumbX, totalCount)
+                        Log.i(TAG, "Ad detected: '$matchedAd' (Thumb at X=$currentThumbX, wasRecentlySkipped=$wasRecentlySkipped)")
 
-                        // Даем жесту перемотки выполниться на экране
-                        delay(350)
-                        // Проверяем следующий кадр: если баннер все еще виден, он будет домотан сразу!
+                        // Если баннер все еще на экране после перемотки (ультракороткое видео или длинная реклама) — мгновенно свайпаем дальше
+                        if (wasRecentlySkipped) {
+                            Log.i(TAG, "Banner still present after timeline seek -> Skipping to next video (Swipe Up)")
+                            if (SkipperConfig.showToast) {
+                                Handler(Looper.getMainLooper()).post {
+                                    Toast.makeText(applicationContext, "⏩ Пропуск к следующему ролику...", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            dispatchSwipeUp()
+                            delay(600)
+                        } else {
+                            notifyAndFastForward(matchedAd, currentThumbX, totalCount)
+                            delay(400)
+                        }
                     } else {
                         // Обычный кадр без рекламы — безопасный интервал для соблюдения лимитов Android
                         delay(350)
@@ -187,12 +198,35 @@ class SkipperAccessibilityService : AccessibilityService() {
     }
 
     private fun notifyAndFastForward(adLabel: String, detectedThumbX: Float?, totalCount: Int) {
-        if (SkipperConfig.showToast) {
-            Handler(Looper.getMainLooper()).post {
-                Toast.makeText(applicationContext, "⏩ Перемотка рекламы ($adLabel)... [#$totalCount]", Toast.LENGTH_SHORT).show()
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getRealMetrics(metrics)
+
+        val screenWidth = metrics.widthPixels.toFloat()
+        val barLeft = screenWidth * 0.033f
+        val barRight = screenWidth * 0.967f
+        val barWidth = barRight - barLeft
+
+        // Если бегунок уже правее 65% длины видео (реклама в аутро/хвосте короткого ролика):
+        // Перемотка упрется в финал. Вместо этого мгновенно переходим к следующему ролику!
+        val isNearEnd = detectedThumbX != null && detectedThumbX > (barLeft + barWidth * 0.65f)
+
+        if (isNearEnd) {
+            if (SkipperConfig.showToast) {
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(applicationContext, "⏩ Реклама в конце ($adLabel) -> Следующее видео [#$totalCount]", Toast.LENGTH_SHORT).show()
+                }
             }
+            dispatchSwipeUp()
+        } else {
+            if (SkipperConfig.showToast) {
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(applicationContext, "⏩ Перемотка рекламы ($adLabel)... [#$totalCount]", Toast.LENGTH_SHORT).show()
+                }
+            }
+            performTimelineFastForward(detectedThumbX, SkipperConfig.seekPercent)
         }
-        performTimelineFastForward(detectedThumbX, SkipperConfig.seekPercent)
     }
 
     /**
@@ -277,6 +311,44 @@ class SkipperAccessibilityService : AccessibilityService() {
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 super.onCancelled(gestureDescription)
                 Log.w(TAG, "Timeline drag fast forward cancelled")
+            }
+        }, null)
+    }
+
+    /**
+     * Выполняет быстрый вертикальный свайп вверх (переход на следующее видео в TikTok).
+     * Применяется, когда реклама находится в финале ролика или на ультракоротких клипах без перемотки.
+     */
+    fun dispatchSwipeUp() {
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getRealMetrics(metrics)
+
+        val screenWidth = metrics.widthPixels.toFloat()
+        val screenHeight = metrics.heightPixels.toFloat()
+
+        val startX = screenWidth * 0.5f
+        val startY = screenHeight * 0.75f
+        val endY = screenHeight * 0.22f
+
+        val path = Path().apply {
+            moveTo(startX, startY)
+            lineTo(startX, endY)
+        }
+
+        val stroke = GestureDescription.StrokeDescription(path, 0, 190)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+
+        dispatchGesture(gesture, object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                super.onCompleted(gestureDescription)
+                Log.i(TAG, "Swipe up (Next Video) gesture completed successfully")
+            }
+
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                super.onCancelled(gestureDescription)
+                Log.w(TAG, "Swipe up gesture cancelled")
             }
         }, null)
     }
