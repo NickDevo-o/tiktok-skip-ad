@@ -1,6 +1,8 @@
-# TikTok Case Ad Skipper ⏩
+<h1 align="center">🎵 TikTok Case Ad Skipper ⏩</h1>
 
-Умный компаньон для Android, автоматически перематывающий встроенную рекламу кейсов, рулеток скинов CS2 и партнерских сетей (таких как **«Мусор Дроп» / Musor Drop, Upgrader, SkinHouse, CSFail** и др.) в TikTok.
+<p align="center">
+  Умный компаньон для Android, автоматически перематывающий встроенную рекламу кейсов, рулеток скинов CS2 и партнерских сетей (таких как <b>«Мусор Дроп» / Musor Drop, Upgrader, SkinHouse, CSFail</b> и др.) в TikTok.
+</p>
 
 ---
 
