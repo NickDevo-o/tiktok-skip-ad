@@ -1,203 +1,354 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#121212"
-    android:gravity="center_horizontal"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="20dp">
 
         <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="🎵 TikTok Ad Skipper"
-        android:textColor="#FFFFFF"
-        android:textSize="26sp"
-        android:textStyle="bold" />
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="🎵 TikTok Ad Skipper"
+            android:textColor="#FFFFFF"
+            android:textSize="24sp"
+            android:textStyle="bold" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="Автоматический пропуск рекламы кейсов и рулеток"
-        android:textColor="#AAAAAA"
-        android:textSize="14sp" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Автоматический пропуск рекламы кейсов и рулеток"
+            android:textColor="#AAAAAA"
+            android:textSize="13sp" />
 
-    <!-- Карточка статистики -->
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        app:cardBackgroundColor="#1A2625"
-        app:cardCornerRadius="16dp"
-        app:strokeColor="#25F4EE"
-        app:strokeWidth="1dp">
-
-        <LinearLayout
+        <!-- Карточка статистики -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:padding="16dp">
+            android:layout_marginTop="16dp"
+            app:cardBackgroundColor="#1A2625"
+            app:cardCornerRadius="16dp"
+            app:strokeColor="#25F4EE"
+            app:strokeWidth="1dp">
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tvSkippedCount"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0"
+                            android:textColor="#25F4EE"
+                            android:textSize="24sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Пропущено реклам"
+                            android:textColor="#88FFFFFF"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="1dp"
+                        android:layout_height="32dp"
+                        android:background="#3325F4EE" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tvSavedTime"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0 сек"
+                            android:textColor="#25F4EE"
+                            android:textSize="24sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Сэкономлено времени"
+                            android:textColor="#88FFFFFF"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
 
                 <TextView
-                    android:id="@+id/tvSkippedCount"
+                    android:id="@+id/btnResetStats"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0"
-                    android:textColor="#25F4EE"
-                    android:textSize="24sp"
-                    android:textStyle="bold" />
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="10dp"
+                    android:padding="4dp"
+                    android:text="Сбросить счетчик"
+                    android:textColor="#6625F4EE"
+                    android:textSize="11sp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Пропущено реклам"
-                    android:textColor="#88FFFFFF"
-                    android:textSize="12sp" />
             </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-            <View
-                android:layout_width="1dp"
-                android:layout_height="32dp"
-                android:background="#3325F4EE" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/tvSavedTime"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0 сек"
-                    android:textColor="#25F4EE"
-                    android:textSize="24sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Сэкономлено времени"
-                    android:textColor="#88FFFFFF"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        app:cardBackgroundColor="#1E1E1E"
-        app:cardCornerRadius="16dp"
-        app:strokeColor="#2C2C2C"
-        app:strokeWidth="1dp">
-
-        <LinearLayout
+        <!-- Карточка управления службой и запуска -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="20dp">
+            android:layout_marginTop="16dp"
+            app:cardBackgroundColor="#1E1E1E"
+            app:cardCornerRadius="16dp"
+            app:strokeColor="#2C2C2C"
+            app:strokeWidth="1dp">
 
-            <TextView
-                android:id="@+id/tvTikTokDetection"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="TikTok: проверка наличия..."
-                android:textColor="#25F4EE"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="12dp"
-                android:background="#2C2C2C" />
-
-            <TextView
-                android:id="@+id/tvAccessibilityStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="1. Служба спец. возможностей: НЕ АКТИВНА"
-                android:textColor="#FF5252"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/btnEnableAccessibility"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Включить в настройках"
-                android:textColor="#25F4EE"
-                app:strokeColor="#25F4EE" />
+                android:orientation="vertical"
+                android:padding="16dp">
 
-            <View
+                <TextView
+                    android:id="@+id/tvTikTokDetection"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="TikTok: проверка..."
+                    android:textColor="#25F4EE"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="10dp"
+                    android:background="#2C2C2C" />
+
+                <TextView
+                    android:id="@+id/tvAccessibilityStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1. Служба спец. возможностей: НЕ АКТИВНА"
+                    android:textColor="#FF5252"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnEnableAccessibility"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Включить в настройках"
+                    android:textColor="#25F4EE"
+                    app:strokeColor="#25F4EE" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="10dp"
+                    android:background="#2C2C2C" />
+
+                <TextView
+                    android:id="@+id/tvServiceStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="2. Мониторинг экрана: ОСТАНОВЛЕН"
+                    android:textColor="#AAAAAA"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnToggleService"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:backgroundTint="#FE2C55"
+                    android:padding="12dp"
+                    android:text="Войти в TikTok с авто-скиппером"
+                    android:textColor="#FFFFFF"
+                    app:cornerRadius="12dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnOpenTikTok"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:padding="10dp"
+                    android:text="Открыть TikTok"
+                    android:textColor="#CCCCCC"
+                    app:cornerRadius="12dp"
+                    app:strokeColor="#3A3A3A" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Карточка настроек -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            app:cardBackgroundColor="#1E1E1E"
+            app:cardCornerRadius="16dp"
+            app:strokeColor="#2C2C2C"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="12dp"
-                android:background="#2C2C2C" />
-
-            <TextView
-                android:id="@+id/tvServiceStatus"
-                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="2. Мониторинг экрана: ОСТАНОВЛЕН"
-                android:textColor="#AAAAAA"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                android:orientation="vertical"
+                android:padding="16dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnToggleService"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:backgroundTint="#FE2C55"
-                android:padding="12dp"
-                android:text="Запустить авто-скиппер"
-                android:textColor="#FFFFFF"
-                app:cornerRadius="12dp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⚙️ Настройки перемотки"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnOpenTikTok"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:padding="12dp"
-                android:text="Открыть TikTok"
-                android:textColor="#FFFFFF"
-                app:cornerRadius="12dp"
-                app:strokeColor="#444444" />
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchShowToast"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:checked="true"
+                    android:text="Всплывающие уведомления о скипе"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp"
+                    app:useMaterialThemeColors="false" />
 
-        </LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Дистанция перемотки вперед:"
+                    android:textColor="#88FFFFFF"
+                    android:textSize="12sp" />
 
-    </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupSeek"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    app:singleSelection="true">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:lineSpacingExtra="4dp"
-        android:text="Инструкция:\n1. При запуске скиппер автоматически обнаруживает ваш установленный TikTok (или мод).\n2. Нажмите «Запустить авто-скиппер» — мониторинг включится и сразу откроет TikTok!\n3. При появлении рекламных плашек скиппер перематывает их на лету."
-        android:textColor="#777777"
-        android:textSize="13sp" />
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipSeekFast"
+                        style="@style/Widget.MaterialComponents.Chip.Choice"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="~3 сек (+10%)"
+                        android:textColor="#FFFFFF" />
 
-</LinearLayout>
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipSeekNormal"
+                        style="@style/Widget.MaterialComponents.Chip.Choice"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="~5 сек (+15%)"
+                        android:textColor="#FFFFFF" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipSeekDeep"
+                        style="@style/Widget.MaterialComponents.Chip.Choice"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="~8 сек (+22%)"
+                        android:textColor="#FFFFFF" />
+                </com.google.android.material.chip.ChipGroup>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="12dp"
+                    android:background="#2C2C2C" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Свои слова и сайты для блокировки:"
+                    android:textColor="#88FFFFFF"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/etCustomKeyword"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:background="#262626"
+                        android:hint="например: 1win, драгонмани"
+                        android:paddingHorizontal="12dp"
+                        android:textColor="#FFFFFF"
+                        android:textColorHint="#666666"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnAddKeyword"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:layout_marginStart="8dp"
+                        android:backgroundTint="#25F4EE"
+                        android:text="+"
+                        android:textColor="#000000"
+                        android:textSize="18sp"
+                        app:cornerRadius="8dp" />
+                </LinearLayout>
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupKeywords"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="24dp"
+            android:lineSpacingExtra="3dp"
+            android:text="100% Приватно и Офлайн:\n• Сканирование работает локально на нейросети ML Kit.\n• Скриншоты и данные никогда не покидают телефон."
+            android:textColor="#555555"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+</ScrollView>

@@ -42,10 +42,6 @@ class SkipperAccessibilityService : AccessibilityService() {
             "com.tiktok.mod"
         )
 
-        // Статистика сессии
-        var skippedAdsCount: Int = 0
-            private set
-
         private const val SKIP_COOLDOWN_MS = 2500L
     }
 
@@ -62,6 +58,7 @@ class SkipperAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        SkipperConfig.init(applicationContext)
         powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
         isTikTokInForeground = true
         Log.d(TAG, "SkipperAccessibilityService connected")
@@ -131,13 +128,13 @@ class SkipperAccessibilityService : AccessibilityService() {
                                     val now = System.currentTimeMillis()
                                     if (now - lastSkipTimestamp >= SKIP_COOLDOWN_MS) {
                                         lastSkipTimestamp = now
-                                        skippedAdsCount++
+                                        val totalCount = SkipperConfig.incrementSkippedCount()
 
                                         // Определяем точное текущее положение ползунка на экране по пикселям
                                         val currentThumbX = detectThumbXFromBitmap(frameBitmap)
 
-                                        Log.i(TAG, "Visual ad detected: '$matchedAd' (Thumb at X=$currentThumbX) -> Fast forwarding timeline!")
-                                        notifyAndFastForward(matchedAd, currentThumbX)
+                                        Log.i(TAG, "Visual ad detected: '$matchedAd' (Total: #$totalCount, Thumb at X=$currentThumbX)")
+                                        notifyAndFastForward(matchedAd, currentThumbX, totalCount)
                                     }
                                 }
                             } finally {
@@ -181,11 +178,13 @@ class SkipperAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun notifyAndFastForward(adLabel: String, detectedThumbX: Float?) {
-        Handler(Looper.getMainLooper()).post {
-            Toast.makeText(applicationContext, "⏩ Перемотка рекламы ($adLabel)... [#$skippedAdsCount]", Toast.LENGTH_SHORT).show()
+    private fun notifyAndFastForward(adLabel: String, detectedThumbX: Float?, totalCount: Int) {
+        if (SkipperConfig.showToast) {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(applicationContext, "⏩ Перемотка рекламы ($adLabel)... [#$totalCount]", Toast.LENGTH_SHORT).show()
+            }
         }
-        performTimelineFastForward(detectedThumbX)
+        performTimelineFastForward(detectedThumbX, SkipperConfig.seekPercent)
     }
 
     /**
@@ -200,7 +199,6 @@ class SkipperAccessibilityService : AccessibilityService() {
             val minX = (bitmap.width * 0.033f).toInt()
             val maxX = (bitmap.width * 0.967f).toInt().coerceAtMost(bitmap.width - 1)
 
-            // Проверяем 3 соседних строки вокруг линии таймлайна
             val testYs = listOf(baseY - 2, baseY, baseY + 2).filter { it in 0 until bitmap.height }
 
             for (y in testYs) {
@@ -209,7 +207,6 @@ class SkipperAccessibilityService : AccessibilityService() {
                     val r = (pixel shr 16) and 0xff
                     val g = (pixel shr 8) and 0xff
                     val b = pixel and 0xff
-                    // Белая точка прогресса / ползунка (R, G, B > 165)
                     if (r > 165 && g > 165 && b > 165) {
                         if (x > maxWhiteX) {
                             maxWhiteX = x
@@ -227,10 +224,9 @@ class SkipperAccessibilityService : AccessibilityService() {
 
     /**
      * Выполняет точную перемотку ролика вперед по таймлайну TikTok:
-     * Берет ТОЧНОЕ место, где сейчас находится белая точка ползунка,
-     * и плавно перетаскивает ее вперед на +15% длины видео (~4-5 секунд).
+     * Перетаскивает ползунок вперед на настраиваемый процент (по умолчанию 15%, ~4-5 сек).
      */
-    fun performTimelineFastForward(detectedThumbX: Float? = null) {
+    fun performTimelineFastForward(detectedThumbX: Float? = null, customSeekPercent: Float? = null) {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
@@ -244,15 +240,14 @@ class SkipperAccessibilityService : AccessibilityService() {
         val barRight = screenWidth * 0.967f
         val barWidth = barRight - barLeft
 
-        // Точка захвата: точное место текущего ползунка, либо четверть экрана
         val currentX = detectedThumbX ?: (barLeft + barWidth * 0.25f)
         val startX = currentX.coerceIn(barLeft + 10f, barRight - 40f)
 
-        // Перетаскиваем на +15% длины таймлайна вперед (аккуратные ~4-5 секунд видео, без перескока контента)
-        val seekForwardAmount = barWidth * 0.15f
+        val fraction = customSeekPercent ?: SkipperConfig.seekPercent
+        val seekForwardAmount = barWidth * fraction
         val endX = (startX + seekForwardAmount).coerceAtMost(barRight - 15f)
 
-        Log.i(TAG, "Executing precise timeline drag from X=$startX to X=$endX at Y=$timelineY")
+        Log.i(TAG, "Executing timeline drag (${(fraction * 100).toInt()}%) from X=$startX to X=$endX at Y=$timelineY")
         dispatchSwipe(startX, endX, timelineY)
     }
 
@@ -262,7 +257,6 @@ class SkipperAccessibilityService : AccessibilityService() {
             lineTo(endX, y)
         }
 
-        // Длительность 350мс гарантирует, что TikTok воспримет жест именно как драг ползунка без паузы
         val stroke = GestureDescription.StrokeDescription(path, 0, 350)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 

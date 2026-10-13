@@ -6,9 +6,13 @@ import android.graphics.Color
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
+import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
+import com.google.android.material.switchmaterial.SwitchMaterial
 
 class MainActivity : AppCompatActivity() {
 
@@ -18,11 +22,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnLaunchAndMonitor: Button
     private lateinit var tvSkippedCount: TextView
     private lateinit var tvSavedTime: TextView
+    private lateinit var btnResetStats: TextView
+
+    private lateinit var switchShowToast: SwitchMaterial
+    private lateinit var chipGroupSeek: ChipGroup
+    private lateinit var etCustomKeyword: EditText
+    private lateinit var btnAddKeyword: Button
+    private lateinit var chipGroupKeywords: ChipGroup
 
     private var detectedTikTokPackage: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SkipperConfig.init(this)
         setContentView(R.layout.activity_main)
 
         tvTikTokDetection = findViewById(R.id.tvTikTokDetection)
@@ -31,20 +43,32 @@ class MainActivity : AppCompatActivity() {
         btnLaunchAndMonitor = findViewById(R.id.btnToggleService)
         tvSkippedCount = findViewById(R.id.tvSkippedCount)
         tvSavedTime = findViewById(R.id.tvSavedTime)
+        btnResetStats = findViewById(R.id.btnResetStats)
 
-        // Кнопку "Открыть TikTok" делаем дублем или скрываем за ненадобностью
+        switchShowToast = findViewById(R.id.switchShowToast)
+        chipGroupSeek = findViewById(R.id.chipGroupSeek)
+        etCustomKeyword = findViewById(R.id.etCustomKeyword)
+        btnAddKeyword = findViewById(R.id.btnAddKeyword)
+        chipGroupKeywords = findViewById(R.id.chipGroupKeywords)
+
         findViewById<Button>(R.id.btnOpenTikTok).setOnClickListener {
             openDetectedTikTok()
         }
 
         detectInstalledTikTok()
+        setupSettingsControls()
+
+        btnResetStats.setOnClickListener {
+            SkipperConfig.resetStats()
+            updateUI()
+            Toast.makeText(this, "Статистика сброшена", Toast.LENGTH_SHORT).show()
+        }
 
         btnEnableAccessibility.setOnClickListener {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
         }
 
-        // Главная кнопка: включает мониторинг и СРАЗУ открывает TikTok без каких-либо диалогов!
         btnLaunchAndMonitor.setOnClickListener {
             if (!SkipperAccessibilityService.isRunning) {
                 Toast.makeText(this, "Сначала включите службу спец. возможностей в пункте 1!", Toast.LENGTH_LONG).show()
@@ -53,13 +77,68 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // Активируем мониторинг
             SkipperAccessibilityService.instance?.isMonitoringActive = true
-
             Toast.makeText(this, "Скиппер активен! Открываем TikTok...", Toast.LENGTH_SHORT).show()
-
-            // МГНОВЕННО ОТКРЫВАЕМ TIKTOK! Никаких вопросов и диалогов!
             openDetectedTikTok()
+        }
+    }
+
+    private fun setupSettingsControls() {
+        // 1. Уведомления
+        switchShowToast.isChecked = SkipperConfig.showToast
+        switchShowToast.setOnCheckedChangeListener { _, isChecked ->
+            SkipperConfig.showToast = isChecked
+        }
+
+        // 2. Длина перемотки
+        val currentPercent = SkipperConfig.seekPercent
+        when {
+            currentPercent <= 0.11f -> chipGroupSeek.check(R.id.chipSeekFast)
+            currentPercent >= 0.20f -> chipGroupSeek.check(R.id.chipSeekDeep)
+            else -> chipGroupSeek.check(R.id.chipSeekNormal)
+        }
+
+        chipGroupSeek.setOnCheckedStateChangeListener { _, checkedIds ->
+            if (checkedIds.isEmpty()) return@setOnCheckedStateChangeListener
+            when (checkedIds[0]) {
+                R.id.chipSeekFast -> SkipperConfig.seekPercent = 0.10f
+                R.id.chipSeekNormal -> SkipperConfig.seekPercent = 0.15f
+                R.id.chipSeekDeep -> SkipperConfig.seekPercent = 0.22f
+            }
+        }
+
+        // 3. Пользовательские ключевые слова
+        refreshKeywordChips()
+
+        btnAddKeyword.setOnClickListener {
+            val word = etCustomKeyword.text.toString().trim()
+            if (word.isNotEmpty()) {
+                val added = SkipperConfig.addCustomKeyword(word)
+                if (added) {
+                    etCustomKeyword.text.clear()
+                    refreshKeywordChips()
+                    Toast.makeText(this, "Добавлен фильтр: $word", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Слово уже добавлено", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun refreshKeywordChips() {
+        chipGroupKeywords.removeAllViews()
+        for (keyword in SkipperConfig.customKeywords) {
+            val chip = Chip(this).apply {
+                text = keyword
+                isCloseIconVisible = true
+                setTextColor(Color.WHITE)
+                setChipBackgroundColorResource(android.R.color.darker_gray)
+                setOnCloseIconClickListener {
+                    SkipperConfig.removeCustomKeyword(keyword)
+                    refreshKeywordChips()
+                }
+            }
+            chipGroupKeywords.addView(chip)
         }
     }
 
@@ -141,7 +220,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUI() {
         val tvServiceStatus = findViewById<TextView>(R.id.tvServiceStatus)
-        val skippedCount = SkipperAccessibilityService.skippedAdsCount
+        val skippedCount = SkipperConfig.skippedAdsCount
         tvSkippedCount.text = skippedCount.toString()
 
         val totalSeconds = skippedCount * 5

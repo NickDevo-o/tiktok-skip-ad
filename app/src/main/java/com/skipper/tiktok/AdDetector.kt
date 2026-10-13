@@ -15,7 +15,7 @@ object AdDetector {
     // Оффлайн-распознаватель текста (ML Kit)
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    // Кроссплатформенный Unicode-разделитель слов для Android (без \b, который сбоит на кириллице)
+    // Кроссплатформенный Unicode-разделитель слов для Android
     private fun w(regex: String): String = "(?:^|[^\\p{L}\\p{Nd}])($regex)(?:$|[^\\p{L}\\p{Nd}])"
 
     private val AD_REGEX_LIST = listOf(
@@ -76,6 +76,7 @@ object AdDetector {
                 val cleanText = text.replace("\n", " ").lowercase()
                 Log.d(TAG, "OCR detected in banner area: '$cleanText'")
 
+                // 1. Проверяем встроенный список правил
                 for (pattern in AD_REGEX_LIST) {
                     val matcher = pattern.matcher(cleanText)
                     if (matcher.find()) {
@@ -86,6 +87,15 @@ object AdDetector {
                         }
                         Log.i(TAG, "Ad detected! Matched: '$matched' in text: '$cleanText'")
                         return matched
+                    }
+                }
+
+                // 2. Проверяем пользовательские фильтры из настроек
+                val customWords = SkipperConfig.customKeywords
+                for (customWord in customWords) {
+                    if (cleanText.contains(customWord)) {
+                        Log.i(TAG, "Custom ad keyword detected! Matched: '$customWord'")
+                        return customWord
                     }
                 }
             }
