@@ -93,17 +93,17 @@ class MainActivity : AppCompatActivity() {
         // 2. Длина перемотки
         val currentPercent = SkipperConfig.seekPercent
         when {
-            currentPercent <= 0.17f -> chipGroupSeek.check(R.id.chipSeekFast)
-            currentPercent >= 0.26f -> chipGroupSeek.check(R.id.chipSeekDeep)
+            currentPercent <= 0.20f -> chipGroupSeek.check(R.id.chipSeekFast)
+            currentPercent >= 0.30f -> chipGroupSeek.check(R.id.chipSeekDeep)
             else -> chipGroupSeek.check(R.id.chipSeekNormal)
         }
 
         chipGroupSeek.setOnCheckedStateChangeListener { _, checkedIds ->
             if (checkedIds.isEmpty()) return@setOnCheckedStateChangeListener
             when (checkedIds[0]) {
-                R.id.chipSeekFast -> SkipperConfig.seekPercent = 0.15f
-                R.id.chipSeekNormal -> SkipperConfig.seekPercent = 0.22f
-                R.id.chipSeekDeep -> SkipperConfig.seekPercent = 0.30f
+                R.id.chipSeekFast -> SkipperConfig.seekPercent = 0.18f
+                R.id.chipSeekNormal -> SkipperConfig.seekPercent = 0.25f
+                R.id.chipSeekDeep -> SkipperConfig.seekPercent = 0.35f
             }
         }
 

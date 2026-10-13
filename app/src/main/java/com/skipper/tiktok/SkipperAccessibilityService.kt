@@ -21,7 +21,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.Executors
+import kotlin.coroutines.resume
 
 class SkipperAccessibilityService : AccessibilityService() {
 
@@ -41,9 +43,6 @@ class SkipperAccessibilityService : AccessibilityService() {
             "com.ss.android.ugc.aweme.lite",
             "com.tiktok.mod"
         )
-
-        // Быстрый повторный опрос (1.2 сек) позволяет повторно домотать, если интеграция длинная
-        private const val SKIP_COOLDOWN_MS = 1200L
     }
 
     var isMonitoringActive: Boolean = true
@@ -67,9 +66,9 @@ class SkipperAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Фоновый цикл визуального сканирования через takeScreenshot() (Android 11+).
-     * Проверяет видеокадр каждые 250мс для упреждающего детектирования баннеров на самых первых секундах.
-     * Автоматически приостанавливается, если экран выключен (экономия батареи).
+     * Последовательный фоновый цикл анализа экрана через takeScreenshotSuspend().
+     * Исключает ошибки ERROR_TAKE_SCREENSHOT_INTERVAL_RIGID (код 3) благодаря строго последовательному вызову.
+     * Немедленно перематывает баннер, а если он продолжается — мгновенно домотает его на следующем кадре.
      */
     private fun startVisualMonitoring() {
         screenshotJob?.cancel()
@@ -81,8 +80,6 @@ class SkipperAccessibilityService : AccessibilityService() {
         screenshotJob = serviceScope.launch {
             while (isActive) {
                 try {
-                    delay(250) // Быстрая реакция: сканируем 4 раза в секунду
-
                     // Экономия аккумулятора: если экран выключен, ждем
                     if (powerManager?.isInteractive == false) {
                         delay(1000)
@@ -90,71 +87,84 @@ class SkipperAccessibilityService : AccessibilityService() {
                     }
 
                     if (!isMonitoringActive || !isTikTokInForeground) {
+                        delay(500)
                         continue
                     }
 
-                    val now = System.currentTimeMillis()
-                    if (now - lastSkipTimestamp < SKIP_COOLDOWN_MS) {
+                    // Последовательный снимок экрана (ожидаем завершения предыдущего)
+                    val bitmap = takeScreenshotSuspend()
+                    if (bitmap == null) {
+                        // Если вызов отклонен системой (лимит частоты), даем короткую паузу
+                        delay(450)
                         continue
                     }
 
-                    captureAndAnalyzeScreen()
+                    var currentThumbX: Float? = null
+                    val matchedAd = try {
+                        currentThumbX = detectThumbXFromBitmap(bitmap)
+                        AdDetector.analyzeFrame(bitmap)
+                    } finally {
+                        if (!bitmap.isRecycled) {
+                            bitmap.recycle()
+                        }
+                    }
+
+                    if (matchedAd != null) {
+                        val now = System.currentTimeMillis()
+                        lastSkipTimestamp = now
+                        val totalCount = SkipperConfig.incrementSkippedCount()
+
+                        Log.i(TAG, "Ad detected: '$matchedAd' (Thumb at X=$currentThumbX) -> Fast forwarding timeline!")
+                        notifyAndFastForward(matchedAd, currentThumbX, totalCount)
+
+                        // Даем жесту перемотки выполниться на экране
+                        delay(350)
+                        // Проверяем следующий кадр: если баннер все еще виден, он будет домотан сразу!
+                    } else {
+                        // Обычный кадр без рекламы — безопасный интервал для соблюдения лимитов Android
+                        delay(350)
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error in visual monitoring loop", e)
+                    delay(500)
                 }
             }
         }
     }
 
-    private fun captureAndAnalyzeScreen() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+    /**
+     * Обертка над асинхронным takeScreenshot() в suspend-функцию.
+     * Гарантирует, что следующий скриншот никогда не будет запрошен до завершения текущего.
+     */
+    private suspend fun takeScreenshotSuspend(): Bitmap? = suspendCancellableCoroutine { continuation ->
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            continuation.resume(null)
+            return@suspendCancellableCoroutine
+        }
 
         takeScreenshot(Display.DEFAULT_DISPLAY, screenshotExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(screenshot: ScreenshotResult) {
-                var bitmap: Bitmap? = null
-                try {
-                    bitmap = Bitmap.wrapHardwareBuffer(
-                        screenshot.hardwareBuffer,
-                        screenshot.colorSpace
-                    )?.copy(Bitmap.Config.ARGB_8888, false)
-                    screenshot.hardwareBuffer.close()
-
-                    if (bitmap != null) {
-                        serviceScope.launch {
-                            val frameBitmap = bitmap
-                            try {
-                                val matchedAd = AdDetector.analyzeFrame(frameBitmap)
-
-                                if (matchedAd != null) {
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastSkipTimestamp >= SKIP_COOLDOWN_MS) {
-                                        lastSkipTimestamp = now
-                                        val totalCount = SkipperConfig.incrementSkippedCount()
-
-                                        // Определяем точное текущее положение ползунка на экране по пикселям
-                                        val currentThumbX = detectThumbXFromBitmap(frameBitmap)
-
-                                        Log.i(TAG, "Visual ad detected: '$matchedAd' (Total: #$totalCount, Thumb at X=$currentThumbX) -> Fast forwarding timeline!")
-                                        notifyAndFastForward(matchedAd, currentThumbX, totalCount)
-                                    }
-                                }
-                            } finally {
-                                if (!frameBitmap.isRecycled) {
-                                    frameBitmap.recycle()
-                                }
-                            }
-                        }
-                    }
+                val bitmap = try {
+                    val hw = screenshot.hardwareBuffer
+                    val colorSpace = screenshot.colorSpace
+                    val bmp = Bitmap.wrapHardwareBuffer(hw, colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
+                    hw.close()
+                    bmp
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error processing screenshot", e)
-                    if (bitmap != null && !bitmap.isRecycled) {
-                        bitmap.recycle()
-                    }
+                    null
+                }
+                if (continuation.isActive) {
+                    continuation.resume(bitmap)
+                } else {
+                    bitmap?.recycle()
                 }
             }
 
             override fun onFailure(errorCode: Int) {
                 Log.w(TAG, "takeScreenshot failed with code $errorCode")
+                if (continuation.isActive) {
+                    continuation.resume(null)
+                }
             }
         })
     }
@@ -170,12 +180,9 @@ class SkipperAccessibilityService : AccessibilityService() {
                     pkg.contains("tiktok")
         }
 
-        // Если пользователь перелистнул ролик (скролл ленты) — мгновенно сбрасываем кулдаун!
+        // Если пользователь перелистнул ролик (скролл ленты) — мгновенно сбрасываем таймштамп
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
-            if (lastSkipTimestamp != 0L) {
-                lastSkipTimestamp = 0L
-                Log.d(TAG, "User scrolled to next video: cooldown reset to 0ms immediately.")
-            }
+            lastSkipTimestamp = 0L
         }
     }
 
@@ -225,7 +232,7 @@ class SkipperAccessibilityService : AccessibilityService() {
 
     /**
      * Выполняет точную перемотку ролика вперед по таймлайну TikTok:
-     * Перетаскивает ползунок вперед на настраиваемый процент (по умолчанию 22%, ~7-8 сек).
+     * Перетаскивает ползунок вперед на настраиваемый процент (по умолчанию 25%, ~8-9 сек).
      */
     fun performTimelineFastForward(detectedThumbX: Float? = null, customSeekPercent: Float? = null) {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -258,8 +265,7 @@ class SkipperAccessibilityService : AccessibilityService() {
             lineTo(endX, y)
         }
 
-        // Длительность 280мс обеспечивает моментальный и четкий отклик SeekBar
-        val stroke = GestureDescription.StrokeDescription(path, 0, 280)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 260)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
         dispatchGesture(gesture, object : GestureResultCallback() {

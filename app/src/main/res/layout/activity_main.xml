@@ -268,7 +268,7 @@
                         style="@style/Widget.MaterialComponents.Chip.Choice"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="~4 сек (+15%)"
+                        android:text="~5 сек (+18%)"
                         android:textColor="#FFFFFF" />
 
                     <com.google.android.material.chip.Chip
@@ -276,7 +276,7 @@
                         style="@style/Widget.MaterialComponents.Chip.Choice"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="~7 сек (+22%)"
+                        android:text="~8 сек (+25%)"
                         android:textColor="#FFFFFF" />
 
                     <com.google.android.material.chip.Chip
@@ -284,7 +284,7 @@
                         style="@style/Widget.MaterialComponents.Chip.Choice"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="~10 сек (+30%)"
+                        android:text="~12 сек (+35%)"
                         android:textColor="#FFFFFF" />
                 </com.google.android.material.chip.ChipGroup>
 
