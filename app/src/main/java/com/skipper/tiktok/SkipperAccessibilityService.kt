@@ -46,7 +46,7 @@ class SkipperAccessibilityService : AccessibilityService() {
     }
 
     var isMonitoringActive: Boolean = true
-    var isTikTokInForeground: Boolean = false
+    var isTikTokInForeground: Boolean = true
         private set
 
     private var lastSkipTimestamp = 0L
@@ -55,13 +55,32 @@ class SkipperAccessibilityService : AccessibilityService() {
     private val screenshotExecutor = Executors.newSingleThreadExecutor()
     private var powerManager: PowerManager? = null
 
+    private fun isTikTokPackage(pkg: String?): Boolean {
+        if (pkg.isNullOrEmpty()) return false
+        val p = pkg.lowercase()
+        if (p.contains("com.skipper.tiktok")) return false
+        return p.contains("musically") ||
+                p.contains("trill") ||
+                p.contains("aweme") ||
+                (p.contains("tiktok") && !p.contains("skipper"))
+    }
+
+    private fun isSystemOrOurApp(pkg: String?): Boolean {
+        if (pkg.isNullOrEmpty()) return false
+        val p = pkg.lowercase()
+        return p.contains("com.skipper.tiktok") ||
+                p.contains("launcher") ||
+                p.contains("systemui") ||
+                p == "com.android.settings"
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         SkipperConfig.init(applicationContext)
         powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
-        isTikTokInForeground = false
-        Log.d(TAG, "SkipperAccessibilityService connected (idle until TikTok is opened)")
+        isTikTokInForeground = true
+        Log.d(TAG, "SkipperAccessibilityService connected and ready")
         startVisualMonitoring()
     }
 
@@ -86,7 +105,7 @@ class SkipperAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    // Жесткая проверка активного приложения: если открыт не TikTok — спим
+                    // Проверка активного приложения
                     val activePkg = try {
                         rootInActiveWindow?.packageName?.toString()
                     } catch (e: Exception) {
@@ -94,18 +113,10 @@ class SkipperAccessibilityService : AccessibilityService() {
                     }
 
                     if (activePkg != null) {
-                        if (activePkg.contains("com.skipper.tiktok") ||
-                            activePkg.contains("launcher") ||
-                            activePkg.contains("systemui") ||
-                            activePkg.contains("settings")
-                        ) {
+                        if (isTikTokPackage(activePkg)) {
+                            isTikTokInForeground = true
+                        } else if (isSystemOrOurApp(activePkg)) {
                             isTikTokInForeground = false
-                        } else {
-                            isTikTokInForeground = TIKTOK_PACKAGES.contains(activePkg) ||
-                                    activePkg.contains("musically") ||
-                                    activePkg.contains("aweme") ||
-                                    activePkg.contains("trill") ||
-                                    (activePkg.contains("tiktok") && !activePkg.contains("skipper"))
                         }
                     }
 
@@ -117,14 +128,13 @@ class SkipperAccessibilityService : AccessibilityService() {
                     // Последовательный снимок экрана (ожидаем завершения предыдущего)
                     val bitmap = takeScreenshotSuspend()
                     if (bitmap == null) {
-                        // Если вызов отклонен системой (лимит частоты), даем короткую паузу
                         delay(450)
                         continue
                     }
 
-                    var currentThumbX: Float? = null
+                    var currentThumb: ThumbPoint? = null
                     val matchedAd = try {
-                        currentThumbX = detectThumbXFromBitmap(bitmap)
+                        currentThumb = detectThumbFromBitmap(bitmap)
                         AdDetector.analyzeFrame(bitmap)
                     } finally {
                         if (!bitmap.isRecycled) {
@@ -138,36 +148,23 @@ class SkipperAccessibilityService : AccessibilityService() {
                         lastSkipTimestamp = now
                         val totalCount = SkipperConfig.incrementSkippedCount()
 
-                        Log.i(TAG, "Ad detected: '$matchedAd' (Thumb at X=$currentThumbX, wasRecentlySkipped=$wasRecentlySkipped)")
+                        Log.i(TAG, "Ad detected: '$matchedAd' (Thumb=$currentThumb, wasRecentlySkipped=$wasRecentlySkipped)")
 
-                        // Если баннер все еще на экране после перемотки (длинная реклама или концовка ролика)
                         if (wasRecentlySkipped) {
-                            Log.i(TAG, "Banner still present after timeline seek -> Rewinding or seeking further")
-                            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-                            val metrics = DisplayMetrics()
-                            @Suppress("DEPRECATION")
-                            wm.defaultDisplay.getRealMetrics(metrics)
-                            val barLeft = metrics.widthPixels * 0.033f
-                            val barWidth = metrics.widthPixels * (0.967f - 0.033f)
-
-                            val isPastMid = currentThumbX != null && currentThumbX > (barLeft + barWidth * 0.45f)
-                            if (isPastMid) {
-                                if (SkipperConfig.showToast) {
-                                    Handler(Looper.getMainLooper()).post {
-                                        Toast.makeText(applicationContext, "⏩ Реклама в конце ($matchedAd) -> Повтор ролика", Toast.LENGTH_SHORT).show()
-                                    }
+                            Log.i(TAG, "Banner still present after seek -> Rewinding to start")
+                            if (SkipperConfig.showToast) {
+                                Handler(Looper.getMainLooper()).post {
+                                    Toast.makeText(applicationContext, "⏩ Реклама ($matchedAd) -> Повтор ролика", Toast.LENGTH_SHORT).show()
                                 }
-                                performTimelineRewindToStart(currentThumbX)
-                            } else {
-                                performTimelineFastForward(currentThumbX, SkipperConfig.seekPercent)
                             }
+                            performTimelineRewindToStart(currentThumb?.x, currentThumb?.y)
                             delay(600)
                         } else {
-                            notifyAndFastForward(matchedAd, currentThumbX, totalCount)
+                            notifyAndFastForward(matchedAd, currentThumb, totalCount)
                             delay(400)
                         }
                     } else {
-                        // Обычный кадр без рекламы — безопасный интервал для соблюдения лимитов Android
+                        // Обычный кадр без рекламы
                         delay(350)
                     }
                 } catch (e: Exception) {
@@ -218,21 +215,15 @@ class SkipperAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val pkg = event?.packageName?.toString() ?: return
 
-        if (pkg.contains("com.skipper.tiktok") ||
-            pkg.contains("launcher") ||
-            pkg.contains("systemui") ||
-            pkg.contains("settings") ||
-            pkg.contains("android")
-        ) {
-            isTikTokInForeground = false
+        if (isTikTokPackage(pkg)) {
+            isTikTokInForeground = true
             return
         }
 
-        isTikTokInForeground = TIKTOK_PACKAGES.contains(pkg) ||
-                pkg.contains("musically") ||
-                pkg.contains("aweme") ||
-                pkg.contains("trill") ||
-                (pkg.contains("tiktok") && !pkg.contains("skipper"))
+        if (isSystemOrOurApp(pkg)) {
+            isTikTokInForeground = false
+            return
+        }
 
         // Если пользователь перелистнул ролик (скролл ленты) — мгновенно сбрасываем таймштамп
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
@@ -240,52 +231,59 @@ class SkipperAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun notifyAndFastForward(adLabel: String, detectedThumbX: Float?, totalCount: Int) {
+    data class ThumbPoint(val x: Float, val y: Float)
+
+    private fun notifyAndFastForward(adLabel: String, thumbPoint: ThumbPoint?, totalCount: Int) {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
         wm.defaultDisplay.getRealMetrics(metrics)
 
         val screenWidth = metrics.widthPixels.toFloat()
+        val screenHeight = metrics.heightPixels.toFloat()
         val barLeft = screenWidth * 0.033f
         val barRight = screenWidth * 0.967f
         val barWidth = barRight - barLeft
 
-        // Если бегунок уже во второй половине видео (>50% длины, реклама в аутро):
+        val detectedThumbX = thumbPoint?.x
+        val timelineY = thumbPoint?.y ?: (screenHeight * 0.92f)
+
+        // Если бегунок во второй половине видео (>45% длины) ИЛИ не определен (реклама почти всегда в концовке):
         // Возвращаем ползунок в начало ролика (00:00), чтобы видео зациклилось без рекламы!
         // Никаких автосвайпов к следующему видео — пользователь сам листает ленту.
-        val isNearEnd = detectedThumbX != null && detectedThumbX > (barLeft + barWidth * 0.50f)
+        val isNearEnd = detectedThumbX == null || detectedThumbX > (barLeft + barWidth * 0.45f)
 
         if (isNearEnd) {
             if (SkipperConfig.showToast) {
                 Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(applicationContext, "⏩ Реклама в конце ($adLabel) -> Повтор ролика [#$totalCount]", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(applicationContext, "⏩ Реклама ($adLabel) -> Повтор ролика [#$totalCount]", Toast.LENGTH_SHORT).show()
                 }
             }
-            performTimelineRewindToStart(detectedThumbX)
+            performTimelineRewindToStart(detectedThumbX, timelineY)
         } else {
             if (SkipperConfig.showToast) {
                 Handler(Looper.getMainLooper()).post {
                     Toast.makeText(applicationContext, "⏩ Перемотка рекламы ($adLabel)... [#$totalCount]", Toast.LENGTH_SHORT).show()
                 }
             }
-            performTimelineFastForward(detectedThumbX, SkipperConfig.seekPercent)
+            performTimelineFastForward(detectedThumbX, timelineY, SkipperConfig.seekPercent)
         }
     }
 
     /**
-     * Сканирует строку пикселей таймлайна (Y ≈ 91.67% экрана), находя самую правую белую точку (ползунок).
-     * Проверяет несколько соседних Y-строк для абсолютной точности на любых разрешениях экрана.
+     * Сканирует строку пикселей таймлайна, находя самую правую белую точку (ползунок).
+     * Проверяет диапазон высоты от 90% до 99.5% экрана (учитывая как панель вкладок, так и полноэкранный режим).
      */
-    private fun detectThumbXFromBitmap(bitmap: Bitmap): Float? {
+    private fun detectThumbFromBitmap(bitmap: Bitmap): ThumbPoint? {
         return try {
-            val baseY = (bitmap.height * 0.9167f).toInt().coerceIn(0, bitmap.height - 1)
-            var maxWhiteX = -1
-
             val minX = (bitmap.width * 0.033f).toInt()
             val maxX = (bitmap.width * 0.967f).toInt().coerceAtMost(bitmap.width - 1)
 
-            val testYs = listOf(baseY - 4, baseY - 2, baseY, baseY + 2, baseY + 4).filter { it in 0 until bitmap.height }
+            val testYFractions = listOf(0.9167f, 0.910f, 0.923f, 0.930f, 0.980f, 0.985f, 0.990f)
+            val testYs = testYFractions.map { (bitmap.height * it).toInt().coerceIn(0, bitmap.height - 1) }.distinct()
+
+            var bestX = -1
+            var bestY = -1
 
             for (y in testYs) {
                 for (x in minX..maxX step 3) {
@@ -294,16 +292,17 @@ class SkipperAccessibilityService : AccessibilityService() {
                     val g = (pixel shr 8) and 0xff
                     val b = pixel and 0xff
                     if (r > 165 && g > 165 && b > 165) {
-                        if (x > maxWhiteX) {
-                            maxWhiteX = x
+                        if (x > bestX) {
+                            bestX = x
+                            bestY = y
                         }
                     }
                 }
             }
 
-            if (maxWhiteX > 0) maxWhiteX.toFloat() else null
+            if (bestX > 0 && bestY > 0) ThumbPoint(bestX.toFloat(), bestY.toFloat()) else null
         } catch (e: Exception) {
-            Log.w(TAG, "Error detecting thumb X from bitmap", e)
+            Log.w(TAG, "Error detecting thumb from bitmap", e)
             null
         }
     }
@@ -311,7 +310,7 @@ class SkipperAccessibilityService : AccessibilityService() {
     /**
      * Сбрасывает таймлайн в самое начало (00:00), чтобы зациклить ролик без показа рекламы в концовке.
      */
-    fun performTimelineRewindToStart(detectedThumbX: Float? = null) {
+    fun performTimelineRewindToStart(detectedThumbX: Float? = null, timelineY: Float? = null) {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
@@ -320,23 +319,33 @@ class SkipperAccessibilityService : AccessibilityService() {
         val screenWidth = metrics.widthPixels.toFloat()
         val screenHeight = metrics.heightPixels.toFloat()
 
-        val timelineY = screenHeight * 0.9167f
+        val y = timelineY ?: (screenHeight * 0.92f)
         val barLeft = screenWidth * 0.033f
         val barRight = screenWidth * 0.967f
 
-        val currentX = detectedThumbX ?: (barRight - 60f)
-        val startX = currentX.coerceIn(barLeft + 60f, barRight - 20f)
+        val currentX = detectedThumbX ?: (barRight - 80f)
+        val startX = currentX.coerceIn(barLeft + 80f, barRight - 20f)
         val endX = barLeft + 15f
 
-        Log.i(TAG, "Executing timeline rewind to 00:00 (Loop) from X=$startX to X=$endX at Y=$timelineY")
-        dispatchSwipe(startX, endX, timelineY)
+        Log.i(TAG, "Executing timeline rewind to 00:00 (Loop) from X=$startX to X=$endX at Y=$y")
+        dispatchSwipe(startX, endX, y)
+        dispatchTap(endX, y)
+    }
+
+    private fun dispatchTap(x: Float, y: Float) {
+        val path = Path().apply {
+            moveTo(x, y)
+        }
+        val stroke = GestureDescription.StrokeDescription(path, 50, 60)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, null, null)
     }
 
     /**
      * Выполняет точную перемотку ролика вперед по таймлайну TikTok:
      * Перетаскивает ползунок вперед на настраиваемый процент (по умолчанию 25%, ~8-9 сек).
      */
-    fun performTimelineFastForward(detectedThumbX: Float? = null, customSeekPercent: Float? = null) {
+    fun performTimelineFastForward(detectedThumbX: Float? = null, timelineY: Float? = null, customSeekPercent: Float? = null) {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
@@ -345,7 +354,7 @@ class SkipperAccessibilityService : AccessibilityService() {
         val screenWidth = metrics.widthPixels.toFloat()
         val screenHeight = metrics.heightPixels.toFloat()
 
-        val timelineY = screenHeight * 0.9167f
+        val y = timelineY ?: (screenHeight * 0.92f)
         val barLeft = screenWidth * 0.033f
         val barRight = screenWidth * 0.967f
         val barWidth = barRight - barLeft
@@ -357,8 +366,8 @@ class SkipperAccessibilityService : AccessibilityService() {
         val seekForwardAmount = barWidth * fraction
         val endX = (startX + seekForwardAmount).coerceAtMost(barRight - 15f)
 
-        Log.i(TAG, "Executing timeline drag (${(fraction * 100).toInt()}%) from X=$startX to X=$endX at Y=$timelineY")
-        dispatchSwipe(startX, endX, timelineY)
+        Log.i(TAG, "Executing timeline drag (${(fraction * 100).toInt()}%) from X=$startX to X=$endX at Y=$y")
+        dispatchSwipe(startX, endX, y)
     }
 
     private fun dispatchSwipe(startX: Float, endX: Float, y: Float) {
@@ -367,7 +376,7 @@ class SkipperAccessibilityService : AccessibilityService() {
             lineTo(endX, y)
         }
 
-        val stroke = GestureDescription.StrokeDescription(path, 0, 260)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 320)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
         dispatchGesture(gesture, object : GestureResultCallback() {
@@ -379,44 +388,6 @@ class SkipperAccessibilityService : AccessibilityService() {
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 super.onCancelled(gestureDescription)
                 Log.w(TAG, "Timeline drag fast forward cancelled")
-            }
-        }, null)
-    }
-
-    /**
-     * Выполняет быстрый вертикальный свайп вверх (переход на следующее видео в TikTok).
-     * Применяется, когда реклама находится в финале ролика или на ультракоротких клипах без перемотки.
-     */
-    fun dispatchSwipeUp() {
-        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        val metrics = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        wm.defaultDisplay.getRealMetrics(metrics)
-
-        val screenWidth = metrics.widthPixels.toFloat()
-        val screenHeight = metrics.heightPixels.toFloat()
-
-        val startX = screenWidth * 0.5f
-        val startY = screenHeight * 0.75f
-        val endY = screenHeight * 0.22f
-
-        val path = Path().apply {
-            moveTo(startX, startY)
-            lineTo(startX, endY)
-        }
-
-        val stroke = GestureDescription.StrokeDescription(path, 0, 190)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-
-        dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) {
-                super.onCompleted(gestureDescription)
-                Log.i(TAG, "Swipe up (Next Video) gesture completed successfully")
-            }
-
-            override fun onCancelled(gestureDescription: GestureDescription?) {
-                super.onCancelled(gestureDescription)
-                Log.w(TAG, "Swipe up gesture cancelled")
             }
         }, null)
     }

@@ -37,13 +37,13 @@ object AdDetector {
 
         // 3. Другие популярные сайты с кейсами и рулетками
         w("casedrop|ggdrop|csfail|mycsgo|forcedrop|skinbox|hotcase|easydrop|magicdrop|tastybreak|hellcase|csgo500|skinhouse|скинхаус|battledrop|upx|up\\-x"),
-        w("topskin|top\\s*skin|топскин|топ\\s*скин|top-skin|top_skin"),
+        w("topskin|top\\s*skin|топскин|топ\\s*скин|top-skin|top_skin|top"),
         w("casebattle|кейсбатл|case\\-battle|cscase|csgetto|skinon|skinrush"),
         "skin\\s*house|скин\\s*хаус|cknhxayc|ckuhxayc",
 
         // 3.1 Кнопки действий рулеток («ВЫВЕСТИ», «ОТКРЫТЬ КЕЙС»)
-        w("вывести|вывод|выведи|b[b1l]ibect[il]?|bybect[il]?|bibect[il]?|vyvesti|vyvod"),
-        "открыть\\s*кейс|открой\\s*кейс|открывай|otkroy\\s*keys",
+        w("вывести|вывод|выведи|b[b1l]ibect[il]?|bybect[il]?|bibect[il]?|vyvesti|vyvod|bbibect|b1ibect|bibect"),
+        "открыть\\s*кейс|открой\\s*кейс|открывай|otkroy\\s*keys|otkryt",
 
         // 3.2 Паттерны рулеток оружия (CS2 скины/ножи в баннерах)
         "neo[\\-_ ]*noir|teclu\\s*burner|doppler|karambit|case\\s*hardened|dragon\\s*lore|допплер|керамбит",
@@ -80,13 +80,18 @@ object AdDetector {
             scaledBitmap = Bitmap.createScaledBitmap(croppedBitmap, targetWidth, targetHeight, false)
 
             // 1. Быстрая проверка фирменной кислотно-зеленой плашки «Мусор Дроп» (контейнер / CRT-сетка)
-            // Позволяет поймать рекламу уже на первых секундах до появления текста
             if (checkGreenDumpsterSignature(scaledBitmap)) {
                 Log.i(TAG, "Ad signature detected: Green Dumpster / Roulette visual banner!")
                 return "Мусор Дроп"
             }
 
-            // 2. Распознавание текста через Google ML Kit
+            // 2. Быстрая проверка плашки рулетки / кейса (Topskin, кейсы CS2, желтая кнопка «ВЫВЕСТИ»)
+            if (checkRouletteOverlaySignature(scaledBitmap)) {
+                Log.i(TAG, "Ad signature detected: Roulette Overlay / Topskin!")
+                return "Кейсы / Topskin"
+            }
+
+            // 3. Распознавание текста через Google ML Kit
             val image = InputImage.fromBitmap(scaledBitmap, 0)
             val result = recognizer.process(image).await()
             val text = result.text
@@ -166,5 +171,68 @@ object AdDetector {
         if (totalSampled == 0) return false
         val percentage = (greenMatchCount.toFloat() / totalSampled) * 100f
         return percentage >= 5.0f
+    }
+
+    /**
+     * Анализирует нижнюю треть кадра (55% - 88% высоты) на наличие баннера кейсов/рулетки (Topskin, Upgrader и др.):
+     * - Фиолетовая/неоновая рамка кейса
+     * - Ярко-желтая кнопка «ВЫВЕСТИ» / «ОТКРЫТЬ КЕЙС»
+     * - Темная подложка плашки
+     */
+    private fun checkRouletteOverlaySignature(scaledBitmap: Bitmap): Boolean {
+        val width = scaledBitmap.width
+        val height = scaledBitmap.height
+
+        val startY = (height * 0.55f).toInt()
+        val endY = (height * 0.88f).toInt().coerceAtMost(height - 1)
+        val startX = (width * 0.04f).toInt()
+        val endX = (width * 0.96f).toInt().coerceAtMost(width - 1)
+
+        val roiHeight = endY - startY
+        val roiWidth = endX - startX
+        if (roiHeight <= 0 || roiWidth <= 0) return false
+
+        var yellowCount = 0
+        var purpleCount = 0
+        var darkCount = 0
+        var totalSampled = 0
+
+        for (y in startY..endY step 3) {
+            for (x in startX..endX step 3) {
+                totalSampled++
+                val pixel = scaledBitmap.getPixel(x, y)
+                val r = (pixel shr 16) and 0xff
+                val g = (pixel shr 8) and 0xff
+                val b = pixel and 0xff
+
+                // 1. Ярко-желтая/золотая кнопка («ВЫВЕСТИ»)
+                if (r > 175 && g > 145 && b < 85) {
+                    yellowCount++
+                }
+
+                // 2. Неоново-фиолетовая рамка/аура кейса
+                if (b > 115 && r > 65 && g < 95 && b > (g * 1.5f)) {
+                    purpleCount++
+                }
+
+                // 3. Темный фон плашки
+                if (r < 45 && g < 40 && b < 55) {
+                    darkCount++
+                }
+            }
+        }
+
+        if (totalSampled == 0) return false
+        val darkRatio = darkCount.toFloat() / totalSampled
+
+        // Критерии детекции:
+        // А) Желтая кнопка «ВЫВЕСТИ»
+        if (yellowCount > 15) return true
+        // Б) Фиолетовая аура кейса с темной подложкой
+        if (purpleCount > 12 && darkRatio > 0.30f) return true
+        // В) Преобладающая темная подложка плашки
+        if (darkRatio > 0.60f && (purpleCount > 4 || yellowCount > 4)) return true
+
+        return false
     }
 }
