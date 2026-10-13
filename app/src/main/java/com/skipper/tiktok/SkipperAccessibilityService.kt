@@ -140,15 +140,27 @@ class SkipperAccessibilityService : AccessibilityService() {
 
                         Log.i(TAG, "Ad detected: '$matchedAd' (Thumb at X=$currentThumbX, wasRecentlySkipped=$wasRecentlySkipped)")
 
-                        // Если баннер все еще на экране после перемотки (ультракороткое видео или длинная реклама) — мгновенно свайпаем дальше
+                        // Если баннер все еще на экране после перемотки (длинная реклама или концовка ролика)
                         if (wasRecentlySkipped) {
-                            Log.i(TAG, "Banner still present after timeline seek -> Skipping to next video (Swipe Up)")
-                            if (SkipperConfig.showToast) {
-                                Handler(Looper.getMainLooper()).post {
-                                    Toast.makeText(applicationContext, "⏩ Пропуск к следующему ролику...", Toast.LENGTH_SHORT).show()
+                            Log.i(TAG, "Banner still present after timeline seek -> Rewinding or seeking further")
+                            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                            val metrics = DisplayMetrics()
+                            @Suppress("DEPRECATION")
+                            wm.defaultDisplay.getRealMetrics(metrics)
+                            val barLeft = metrics.widthPixels * 0.033f
+                            val barWidth = metrics.widthPixels * (0.967f - 0.033f)
+
+                            val isPastMid = currentThumbX != null && currentThumbX > (barLeft + barWidth * 0.45f)
+                            if (isPastMid) {
+                                if (SkipperConfig.showToast) {
+                                    Handler(Looper.getMainLooper()).post {
+                                        Toast.makeText(applicationContext, "⏩ Реклама в конце ($matchedAd) -> Повтор ролика", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
+                                performTimelineRewindToStart(currentThumbX)
+                            } else {
+                                performTimelineFastForward(currentThumbX, SkipperConfig.seekPercent)
                             }
-                            dispatchSwipeUp()
                             delay(600)
                         } else {
                             notifyAndFastForward(matchedAd, currentThumbX, totalCount)
@@ -239,17 +251,18 @@ class SkipperAccessibilityService : AccessibilityService() {
         val barRight = screenWidth * 0.967f
         val barWidth = barRight - barLeft
 
-        // Если бегунок уже во второй половине видео (>55% длины, реклама в аутро):
-        // Перемотка упрется в финал. Вместо этого мгновенно переходим к следующему ролику!
-        val isNearEnd = detectedThumbX != null && detectedThumbX > (barLeft + barWidth * 0.55f)
+        // Если бегунок уже во второй половине видео (>50% длины, реклама в аутро):
+        // Возвращаем ползунок в начало ролика (00:00), чтобы видео зациклилось без рекламы!
+        // Никаких автосвайпов к следующему видео — пользователь сам листает ленту.
+        val isNearEnd = detectedThumbX != null && detectedThumbX > (barLeft + barWidth * 0.50f)
 
         if (isNearEnd) {
             if (SkipperConfig.showToast) {
                 Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(applicationContext, "⏩ Реклама в конце ($adLabel) -> Следующее видео [#$totalCount]", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(applicationContext, "⏩ Реклама в конце ($adLabel) -> Повтор ролика [#$totalCount]", Toast.LENGTH_SHORT).show()
                 }
             }
-            dispatchSwipeUp()
+            performTimelineRewindToStart(detectedThumbX)
         } else {
             if (SkipperConfig.showToast) {
                 Handler(Looper.getMainLooper()).post {
@@ -272,7 +285,7 @@ class SkipperAccessibilityService : AccessibilityService() {
             val minX = (bitmap.width * 0.033f).toInt()
             val maxX = (bitmap.width * 0.967f).toInt().coerceAtMost(bitmap.width - 1)
 
-            val testYs = listOf(baseY - 2, baseY, baseY + 2).filter { it in 0 until bitmap.height }
+            val testYs = listOf(baseY - 4, baseY - 2, baseY, baseY + 2, baseY + 4).filter { it in 0 until bitmap.height }
 
             for (y in testYs) {
                 for (x in minX..maxX step 3) {
@@ -293,6 +306,30 @@ class SkipperAccessibilityService : AccessibilityService() {
             Log.w(TAG, "Error detecting thumb X from bitmap", e)
             null
         }
+    }
+
+    /**
+     * Сбрасывает таймлайн в самое начало (00:00), чтобы зациклить ролик без показа рекламы в концовке.
+     */
+    fun performTimelineRewindToStart(detectedThumbX: Float? = null) {
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getRealMetrics(metrics)
+
+        val screenWidth = metrics.widthPixels.toFloat()
+        val screenHeight = metrics.heightPixels.toFloat()
+
+        val timelineY = screenHeight * 0.9167f
+        val barLeft = screenWidth * 0.033f
+        val barRight = screenWidth * 0.967f
+
+        val currentX = detectedThumbX ?: (barRight - 60f)
+        val startX = currentX.coerceIn(barLeft + 60f, barRight - 20f)
+        val endX = barLeft + 15f
+
+        Log.i(TAG, "Executing timeline rewind to 00:00 (Loop) from X=$startX to X=$endX at Y=$timelineY")
+        dispatchSwipe(startX, endX, timelineY)
     }
 
     /**
